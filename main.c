@@ -1,11 +1,11 @@
 #include <stdio.h>
 
-#include <X11/Xft/Xft.h>
-
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xfixes.h>
 #include <X11/extensions/shape.h>
+
+#include <X11/Xft/Xft.h>
 
 // Config
 #define HEADER_FONT "Roboto:size=15"
@@ -86,7 +86,6 @@ int main() {
     XSetWindowAttributes wa = {0};
     wa.colormap = XCreateColormap(display, root, vi.visual, AllocNone);
     wa.override_redirect = True;
-    wa.event_mask = ExposureMask;
 
     const Window overlay = XCreateWindow(
         display,
@@ -99,12 +98,11 @@ int main() {
         vi.depth,
         InputOutput,
         vi.visual,
-        CWColormap | CWBorderPixel | CWBackPixel | CWOverrideRedirect | CWEventMask,
+        CWColormap | CWBorderPixel | CWBackPixel | CWOverrideRedirect,
         &wa);
 
     // Make the window click through
-    XRectangle rect;
-    XserverRegion region = XFixesCreateRegion(display, &rect, 1);
+    const XserverRegion region = XFixesCreateRegion(display, NULL, 0);
     XFixesSetWindowShapeRegion(display, overlay, ShapeInput, 0, 0, region);
     XFixesDestroyRegion(display, region);
 
@@ -126,12 +124,27 @@ int main() {
     };
     XSetClassHint(display, overlay, &class_hint);
 
-    XSelectInput(display, overlay, ExposureMask);
+    XSelectInput(display, root, SubstructureNotifyMask);
+    XSelectInput(display, overlay, ExposureMask | VisibilityChangeMask);
     XMapWindow(display, overlay);
 
     while (1) {
         XEvent e;
         XNextEvent(display, &e);
+
+        if (e.type == VisibilityNotify) {
+            XVisibilityEvent *ve = (XVisibilityEvent *)&e;
+            if (ve->state != VisibilityUnobscured) {
+                XRaiseWindow(display, overlay);
+            }
+        }
+
+        if (e.type == ConfigureNotify) {
+            XConfigureEvent *ce = (XConfigureEvent *)&e;
+            if (ce->window != overlay) {
+                XRaiseWindow(display, overlay);
+            }
+        }
 
         if (e.type == Expose) {
             XftDrawStringUtf8(
