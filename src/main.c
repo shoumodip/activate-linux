@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 
 #include <X11/Xatom.h>
@@ -7,17 +8,8 @@
 
 #include <X11/Xft/Xft.h>
 
-// Config
-#define HEADER_FONT "Roboto:size=15"
-#define FOOTER_FONT "Roboto:size=11"
-
-#define HEADER_TEXT "Activate Linux"
-#define FOOTER_TEXT "Go to Settings to activate Linux"
-
-#define FOREGROUND_COLOR 0xFF928374
-
-#define XPAD 25
-#define YPAD 49
+#define FLAG_IMPLEMENTATION
+#include "flag.h"
 
 // Helpers
 #define render_color(c)                                                                            \
@@ -25,7 +17,7 @@
         .red = (((c) >> (2 * 8)) & 0xFF) << 8,                                                     \
         .green = (((c) >> (1 * 8)) & 0xFF) << 8,                                                   \
         .blue = (((c) >> (0 * 8)) & 0xFF) << 8,                                                    \
-        .alpha = (((c) >> (3 * 8)) & 0xFF) << 8,                                                   \
+        .alpha = 0xFF,                                                                             \
     })
 
 #define return_defer(value)                                                                        \
@@ -34,7 +26,37 @@
         goto defer;                                                                                \
     } while (0)
 
-int main() {
+void usage(FILE *f) {
+    fprintf(f, "Usage: activate-linux [FLAGS]\n");
+    fprintf(f, "FLAGS:\n");
+    flag_print_options(f);
+}
+
+int main(int argc, char **argv) {
+    bool *help = flag_bool("help", false, "Print this help to stdout and exit");
+    char **header_font_name =
+        flag_str("header-font", "Roboto:size=15", "The font used for the header");
+    char **footer_font_name =
+        flag_str("footer-font", "Roboto:size=11", "The font used for the footer");
+    char **header_text = flag_str("header-text", "Activate Linux", "The text in the header");
+    char **footer_text =
+        flag_str("footer-text", "Go to Settings to activate Linux", "The text in the footer");
+    uint64_t *foreground_color =
+        flag_hexcolor("foreground", 0x928374, "The color of the foreground");
+    size_t *xpad = flag_size("xpad", 25, "Amount of pixels padded from the right");
+    size_t *ypad = flag_size("ypad", 49, "Amount of pixels padded from the bottom");
+
+    if (!flag_parse(argc, argv)) {
+        usage(stderr);
+        flag_print_error(stderr);
+        return 1;
+    }
+
+    if (*help) {
+        usage(stdout);
+        return 0;
+    }
+
     int result = 0;
 
     // For the defer macro to work :sigh:
@@ -50,8 +72,8 @@ int main() {
     }
 
     // Fonts
-    header_font = XftFontOpenName(display, 0, HEADER_FONT);
-    footer_font = XftFontOpenName(display, 0, FOOTER_FONT);
+    header_font = XftFontOpenName(display, 0, *header_font_name);
+    footer_font = XftFontOpenName(display, 0, *footer_font_name);
     if (!header_font || !footer_font) {
         fprintf(stderr, "error: could not open font\n");
         return_defer(1);
@@ -59,11 +81,11 @@ int main() {
 
     XGlyphInfo extents = {0};
     XftTextExtentsUtf8(
-        display, header_font, (XftChar8 *)HEADER_TEXT, sizeof(HEADER_TEXT) - 1, &extents);
+        display, header_font, (XftChar8 *)*header_text, strlen(*header_text), &extents);
     const size_t header_width = extents.xOff;
 
     XftTextExtentsUtf8(
-        display, footer_font, (XftChar8 *)FOOTER_TEXT, sizeof(FOOTER_TEXT) - 1, &extents);
+        display, footer_font, (XftChar8 *)*footer_text, strlen(*footer_text), &extents);
     const size_t footer_width = extents.xOff;
 
     const size_t overlay_width = header_width > footer_width ? header_width : footer_width;
@@ -90,8 +112,8 @@ int main() {
     const Window overlay = XCreateWindow(
         display,
         root,
-        width - overlay_width - XPAD,
-        height - overlay_height - YPAD,
+        width - overlay_width - *xpad,
+        height - overlay_height - *ypad,
         overlay_width,
         overlay_height,
         0,
@@ -114,7 +136,7 @@ int main() {
     }
 
     XftColor foreground;
-    const XRenderColor color = render_color(FOREGROUND_COLOR);
+    const XRenderColor color = render_color(*foreground_color);
     XftColorAllocValue(display, vi.visual, wa.colormap, &color, &foreground);
 
     // Show the window
@@ -153,8 +175,8 @@ int main() {
                 header_font,
                 0,
                 header_font->ascent,
-                (XftChar8 *)HEADER_TEXT,
-                sizeof(HEADER_TEXT) - 1);
+                (XftChar8 *)*header_text,
+                strlen(*header_text));
 
             XftDrawStringUtf8(
                 draw,
@@ -162,8 +184,8 @@ int main() {
                 footer_font,
                 0,
                 header_font->ascent + header_font->descent + footer_font->ascent,
-                (XftChar8 *)FOOTER_TEXT,
-                sizeof(FOOTER_TEXT) - 1);
+                (XftChar8 *)*footer_text,
+                strlen(*footer_text));
         }
     }
 
